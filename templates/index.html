@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row align-items-center">
+    <div class="col-md-6">
+        <h1 class="display-4 mb-4">Kayak Job Alerts</h1>
+        <p class="lead mb-4">
+            Blijf op de hoogte van de nieuwste vacatures die perfect passen bij uw profiel.
+            Maak persoonlijke job alerts aan en ontvang direct een melding wanneer er een relevante vacature online komt.
+        </p>
+        <div class="d-grid gap-2 d-md-flex justify-content-md-start">
+            <a href="{{ url_for('register') }}" class="btn btn-primary btn-lg px-4 me-md-2">
+                <i class="bi bi-person-plus"></i> Registreren
+            </a>
+            <a href="{{ url_for('login') }}" class="btn btn-outline-primary btn-lg px-4">
+                <i class="bi bi-box-arrow-in-right"></i> Inloggen
+            </a>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h3 class="card-title">Waarom Kayak Job Alerts?</h3>
+                <ul class="list-unstyled">
+                    <li class="mb-3">
+                        <i class="bi bi-check-circle-fill text-primary"></i>
+                        Persoonlijke zoekcriteria
+                    </li>
+                    <li class="mb-3">
+                        <i class="bi bi-check-circle-fill text-primary"></i>
+                        Directe e-mailnotificaties
+                    </li>
+                    <li class="mb-3">
+                        <i class="bi bi-check-circle-fill text-primary"></i>
+                        Flexibele controlefrequentie
+                    </li>
+                    <li class="mb-3">
+                        <i class="bi bi-check-circle-fill text-primary"></i>
+                        Eenvoudig te beheren dashboard
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

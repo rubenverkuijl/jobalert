@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-body">
+                <h2 class="card-title text-center mb-4">Nieuwe Job Alert</h2>
+                <form method="POST">
+                    <div class="mb-3">
+                        <label for="search_query" class="form-label">Zoekterm</label>
+                        <input type="text" class="form-control" id="search_query" name="search_query" 
+                               placeholder="bijv. commercieel medewerker, sales manager" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="location" class="form-label">Locatie</label>
+                        <input type="text" class="form-control" id="location" name="location" 
+                               placeholder="bijv. Amsterdam, Rotterdam">
+                        <div class="form-text">Laat leeg voor heel Nederland</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="frequency" class="form-label">Frequentie</label>
+                        <select class="form-select" id="frequency" name="frequency">
+                            <option value="daily">Dagelijks</option>
+                            <option value="weekly">Wekelijks</option>
+                            <option value="monthly">Maandelijks</option>
+                        </select>
+                    </div>
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary">Alert Aanmaken</button>
+                        <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">Annuleren</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 
