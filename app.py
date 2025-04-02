@@ -3,8 +3,9 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
+import secrets
 
 load_dotenv()
 
@@ -21,6 +22,8 @@ class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(128))
+    reset_token = db.Column(db.String(100), unique=True)
+    reset_token_expiry = db.Column(db.DateTime)
     job_alerts = db.relationship('JobAlert', backref='user', lazy=True)
 
 class JobAlert(db.Model):
@@ -109,6 +112,55 @@ def toggle_alert(alert_id):
 def logout():
     logout_user()
     return redirect(url_for('index'))
+
+@app.route('/forgot-password', methods=['GET', 'POST'])
+def forgot_password():
+    if request.method == 'POST':
+        email = request.form.get('email')
+        user = User.query.filter_by(email=email).first()
+        
+        if user:
+            # Genereer een unieke reset token
+            token = secrets.token_urlsafe(32)
+            user.reset_token = token
+            user.reset_token_expiry = datetime.utcnow() + timedelta(hours=1)
+            db.session.commit()
+            
+            # Stuur e-mail met reset link
+            reset_url = url_for('reset_password', token=token, _external=True)
+            send_reset_email(user.email, reset_url)
+            
+            flash('Er is een e-mail verstuurd met instructies om uw wachtwoord te resetten.')
+            return redirect(url_for('login'))
+        else:
+            flash('Geen account gevonden met dit e-mailadres.')
+    
+    return render_template('forgot_password.html')
+
+@app.route('/reset-password/<token>', methods=['GET', 'POST'])
+def reset_password(token):
+    if request.method == 'POST':
+        password = request.form.get('password')
+        user = User.query.filter_by(reset_token=token).first()
+        
+        if user and user.reset_token_expiry > datetime.utcnow():
+            user.password_hash = generate_password_hash(password)
+            user.reset_token = None
+            user.reset_token_expiry = None
+            db.session.commit()
+            
+            flash('Uw wachtwoord is succesvol gewijzigd. U kunt nu inloggen.')
+            return redirect(url_for('login'))
+        else:
+            flash('De reset link is ongeldig of verlopen.')
+            return redirect(url_for('forgot_password'))
+    
+    return render_template('reset_password.html')
+
+def send_reset_email(email, reset_url):
+    # Implementeer hier de e-mail functionaliteit
+    # Gebruik de bestaande e-mail configuratie
+    pass
 
 if __name__ == '__main__':
     with app.app_context():
