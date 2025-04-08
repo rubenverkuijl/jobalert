@@ -1,112 +1,244 @@
-from app import app, db, JobAlert
-from datetime import datetime, timedelta
+import os
+import time
 import requests
-from bs4 import BeautifulSoup
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-import os
+from datetime import datetime, timedelta, UTC
 from dotenv import load_dotenv
-import time
+from app import app, db, JobAlert
 
+# Laad environment variabelen
 load_dotenv()
 
-def check_jobs():
-    with app.app_context():
-        # Haal alle actieve alerts op
-        alerts = JobAlert.query.filter_by(is_active=True).all()
-        
-        for alert in alerts:
-            # Controleer of het tijd is om te zoeken
-            last_check = alert.last_check
-            now = datetime.utcnow()
-            
-            if alert.frequency == 'daily' and (now - last_check).days < 1:
-                continue
-            elif alert.frequency == 'weekly' and (now - last_check).days < 7:
-                continue
-            elif alert.frequency == 'monthly' and (now - last_check).days < 30:
-                continue
-            
-            # Zoek naar vacatures
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            }
-            
-            location = alert.location if alert.location else 'nederland'
-            search_url = f"https://www.indeed.nl/jobs?q={alert.search_query}&l={location}"
-            
-            try:
-                response = requests.get(search_url, headers=headers)
-                soup = BeautifulSoup(response.text, 'html.parser')
-                
-                jobs = []
-                for job in soup.find_all('div', class_='job_seen_beacon'):
-                    title = job.find('h2', class_='jobTitle').text.strip()
-                    company = job.find('span', class_='companyName').text.strip()
-                    location = job.find('div', class_='companyLocation').text.strip()
-                    
-                    jobs.append({
-                        'title': title,
-                        'company': company,
-                        'location': location
-                    })
-                
-                if jobs:
-                    send_job_alert(alert.user.email, alert.search_query, jobs)
-                
-                # Update last_check
-                alert.last_check = now
-                db.session.commit()
-                
-            except Exception as e:
-                print(f"Fout bij het controleren van vacatures voor alert {alert.id}: {str(e)}")
-
-def send_job_alert(user_email, search_query, jobs):
-    sender_email = os.getenv('EMAIL_USER')
-    password = os.getenv('EMAIL_PASSWORD')
-    
-    msg = MIMEMultipart()
-    msg['From'] = sender_email
-    msg['To'] = user_email
-    msg['Subject'] = f'Nieuwe Vacatures Gevonden voor "{search_query}"'
-    
-    body = f"Er zijn {len(jobs)} nieuwe vacatures gevonden voor uw zoekopdracht '{search_query}':\n\n"
-    for job in jobs:
-        body += f"Titel: {job['title']}\n"
-        body += f"Bedrijf: {job['company']}\n"
-        body += f"Locatie: {job['location']}\n"
-        body += "-" * 50 + "\n"
-    
-    msg.attach(MIMEText(body, 'plain'))
-    
+def send_job_alert_email(user_email, search_query, location, jobs):
     try:
-        server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls()
-        server.login(sender_email, password)
-        server.send_message(msg)
-        server.quit()
+        # E-mail configuratie
+        smtp_server = "smtp.gmail.com"
+        smtp_port = 587
+        sender_email = os.getenv("EMAIL_USER")
+        sender_password = os.getenv("EMAIL_PASSWORD")
+        
+        # E-mail bericht samenstellen
+        msg = MIMEMultipart('alternative')
+        msg['From'] = sender_email
+        msg['To'] = user_email
+        msg['Subject'] = f"Nieuwe vacatures gevonden voor: {search_query} in {location}"
+        
+        # HTML inhoud voor de e-mail
+        html_content = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <style>
+                body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
+                .job {{ margin-bottom: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 5px; background-color: #f9f9f9; }}
+                .job-title {{ font-weight: bold; color: #2c3e50; font-size: 16px; margin-bottom: 5px; }}
+                .job-company {{ color: #7f8c8d; margin-bottom: 5px; }}
+                .job-location {{ color: #95a5a6; margin-bottom: 10px; }}
+                .button {{ 
+                    display: inline-block; 
+                    padding: 8px 15px; 
+                    background-color: #3498db; 
+                    color: #ffffff !important; 
+                    text-decoration: none !important; 
+                    border-radius: 3px;
+                    margin-top: 10px;
+                }}
+                .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+                .header {{ background-color: #f8f9fa; padding: 20px; border-radius: 5px; margin-bottom: 20px; }}
+                .footer {{ margin-top: 20px; padding-top: 20px; border-top: 1px solid #ddd; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <h2>Nieuwe vacatures gevonden voor: {search_query} in {location}</h2>
+                    <p>Er zijn {len(jobs)} nieuwe vacatures gevonden die voldoen aan uw zoekcriteria.</p>
+                </div>
+                <div class="jobs">
+        """
+        
+        for job in jobs:
+            # Haal de link uit de apply_options als die er is
+            apply_link = None
+            if 'apply_options' in job and len(job['apply_options']) > 0:
+                apply_link = job['apply_options'][0].get('link', '')
+            
+            # Als er geen apply_link is, gebruik dan de job link
+            final_link = apply_link or job.get('link', '')
+            
+            # Maak de link URL veilig voor HTML
+            safe_link = final_link.replace('"', '&quot;')
+            html_content += f"""
+                    <div class="job">
+                        <div class="job-title">{job.get('title', 'Geen titel')}</div>
+                        <div class="job-company">{job.get('company_name', 'Onbekend bedrijf')}</div>
+                        <div class="job-location">{job.get('location', 'Onbekende locatie')}</div>
+                        <a href="{safe_link}" class="button">Bekijk vacature →</a>
+                    </div>
+            """
+        
+        html_content += """
+                </div>
+                <div class="footer">
+                    <p>Met vriendelijke groet,<br>Job Alert Team</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        # Voeg zowel HTML als plain text toe
+        text_content = f"""
+        Nieuwe vacatures gevonden voor: {search_query} in {location}
+        
+        Er zijn {len(jobs)} nieuwe vacatures gevonden die voldoen aan uw zoekcriteria.
+        
+        """
+        
+        for job in jobs:
+            text_content += f"""
+        Titel: {job.get('title', 'Geen titel')}
+        Bedrijf: {job.get('company_name', 'Onbekend bedrijf')}
+        Locatie: {job.get('location', 'Onbekende locatie')}
+        Link: {job.get('link', '')}
+        
+        """
+        
+        text_content += """
+        Met vriendelijke groet,
+        Job Alert Team
+        """
+        
+        msg.attach(MIMEText(text_content, 'plain'))
+        msg.attach(MIMEText(html_content, 'html'))
+        
+        # E-mail versturen
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()
+            server.login(sender_email, sender_password)
+            server.send_message(msg)
+        
         print(f"E-mail succesvol verzonden naar {user_email}")
+        
     except Exception as e:
         print(f"Fout bij het verzenden van de e-mail: {str(e)}")
 
-if __name__ == '__main__':
-    # Eerst een test mail versturen
-    print("Test mail wordt verstuurd...")
-    test_jobs = [{
-        'title': 'Test Vacature',
-        'company': 'Test Bedrijf',
-        'location': 'Test Locatie'
-    }]
+def check_jobs():
+    """Controleer alle actieve job alerts en stuur emails voor nieuwe vacatures"""
+    print("Start normale job check...")
     
-    try:
-        send_job_alert(os.getenv('EMAIL_USER'), 'TEST ALERT', test_jobs)
-        print("Test mail is succesvol verstuurd!")
-    except Exception as e:
-        print(f"Fout bij versturen test mail: {str(e)}")
-    
-    print("\nStart normale job check proces...")
+    with app.app_context():
+        # Haal alle actieve alerts op
+        active_alerts = JobAlert.query.filter_by(is_active=True).all()
+        print(f"Aantal actieve alerts gevonden: {len(active_alerts)}")
+        
+        for alert in active_alerts:
+            print(f"\nControleren alert: {alert.search_query} in {alert.location}")
+            
+            # Controleer of de alert recent is gecontroleerd
+            if alert.last_check:
+                # Converteer last_check naar UTC als het naive is
+                if alert.last_check.tzinfo is None:
+                    last_check_utc = alert.last_check.replace(tzinfo=UTC)
+                else:
+                    last_check_utc = alert.last_check
+                
+                if (datetime.now(UTC) - last_check_utc) < timedelta(hours=1):
+                    print("Alert is te recent gecontroleerd, overslaan...")
+                    continue
+                
+            try:
+                # SerpApi parameters
+                location = alert.location if alert.location else "Netherlands"
+                params = {
+                    "engine": "google_jobs",
+                    "q": f"{alert.search_query}",
+                    "location": location,
+                    "hl": "nl",
+                    "gl": "nl",
+                    "api_key": os.getenv("SERPAPI_KEY"),
+                    "num": "25",
+                    "lrad": "50",  # Zoekradius in kilometers
+                    "chips": "date_posted:today"  # Alleen vacatures van vandaag
+                }
+                
+                print(f"Zoeken naar: {params['q']} in {params['location']}")
+                print(f"API Key aanwezig: {'Ja' if os.getenv('SERPAPI_KEY') else 'Nee'}")
+                
+                # Verzamel resultaten van meerdere pagina's
+                all_jobs = []
+                next_page_token = None
+                max_pages = 3  # Maximum aantal pagina's om te controleren
+                max_jobs = 25  # Maximum aantal resultaten
+                
+                for page in range(max_pages):
+                    if next_page_token:
+                        params["next_page_token"] = next_page_token
+                    
+                    print(f"Versturen request naar SerpApi...")
+                    response = requests.get("https://serpapi.com/search", params=params)
+                    print(f"Response status code: {response.status_code}")
+                    
+                    if response.status_code != 200:
+                        print(f"Error response: {response.text}")
+                        break
+                        
+                    response.raise_for_status()
+                    data = response.json()
+                    
+                    # Debug informatie
+                    print(f"Response keys: {list(data.keys())}")
+                    
+                    if "jobs_results" in data:
+                        jobs = data["jobs_results"]
+                        print(f"Gevonden {len(jobs)} vacatures op pagina {page + 1}")
+                        all_jobs.extend(jobs)
+                        
+                        # Controleer of we genoeg resultaten hebben
+                        if len(all_jobs) >= max_jobs:
+                            all_jobs = all_jobs[:max_jobs]
+                            break
+                        
+                        # Controleer of er een volgende pagina is
+                        next_page_token = data.get("serpapi_pagination", {}).get("next_page_token")
+                        if not next_page_token:
+                            print("Geen volgende pagina beschikbaar")
+                            break
+                            
+                        # Wacht even tussen requests
+                        time.sleep(2)
+                    else:
+                        print("Geen vacatures gevonden in response")
+                        print(f"Beschikbare data: {data}")
+                        break
+                
+                print(f"Totaal aantal gevonden vacatures: {len(all_jobs)}")
+                
+                if all_jobs:
+                    # Haal de gebruiker op via de relatie
+                    user = alert.user
+                    if user and user.email:
+                        # Stuur email met de gevonden vacatures
+                        send_job_alert_email(user.email, alert.search_query, alert.location, all_jobs)
+                        print(f"Email verzonden naar {user.email}")
+                    else:
+                        print(f"Geen geldig email adres gevonden voor alert {alert.id}")
+                
+                # Update last_check tijd
+                alert.last_check = datetime.now(UTC)
+                db.session.commit()
+                
+            except Exception as e:
+                print(f"Fout bij het controleren van alert {alert.id}: {str(e)}")
+                if hasattr(e, 'response'):
+                    print(f"Response body: {e.response.text}")
+                continue
+
+if __name__ == "__main__":
     while True:
         check_jobs()
-        # Controleer elk uur
-        time.sleep(3600)
+        print("\nWachten op volgende check...")
+        time.sleep(300)  # Wacht 5 minuten

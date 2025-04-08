@@ -6,16 +6,30 @@ import os
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 import secrets
+from config import config
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from functools import wraps
 
 load_dotenv()
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev')
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///kayak_jobs.db'
+app.config.from_object(config['production'])
 db = SQLAlchemy(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
+
+# Admin check decorator
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated or current_user.email != os.getenv('ADMIN_EMAIL'):
+            flash('U heeft geen toegang tot deze pagina.')
+            return redirect(url_for('index'))
+        return f(*args, **kwargs)
+    return decorated_function
 
 # Database modellen
 class User(UserMixin, db.Model):
@@ -113,7 +127,7 @@ def logout():
     logout_user()
     return redirect(url_for('index'))
 
-@app.route('/forgot-password', methods=['GET', 'POST'])
+@app.route('/forgot_password', methods=['GET', 'POST'])
 def forgot_password():
     if request.method == 'POST':
         email = request.form.get('email')
@@ -137,7 +151,7 @@ def forgot_password():
     
     return render_template('forgot_password.html')
 
-@app.route('/reset-password/<token>', methods=['GET', 'POST'])
+@app.route('/reset_password/<token>', methods=['GET', 'POST'])
 def reset_password(token):
     if request.method == 'POST':
         password = request.form.get('password')
@@ -158,9 +172,57 @@ def reset_password(token):
     return render_template('reset_password.html')
 
 def send_reset_email(email, reset_url):
-    # Implementeer hier de e-mail functionaliteit
-    # Gebruik de bestaande e-mail configuratie
-    pass
+    sender_email = os.getenv('EMAIL_USER')
+    password = os.getenv('EMAIL_PASSWORD')
+    
+    msg = MIMEMultipart()
+    msg['From'] = sender_email
+    msg['To'] = email
+    msg['Subject'] = 'Wachtwoord Reset Kayak Job Alerts'
+    
+    body = f"""Hallo,
+
+Er is een wachtwoord reset aangevraagd voor uw Kayak Job Alerts account.
+Klik op de volgende link om uw wachtwoord te resetten:
+
+{reset_url}
+
+Als u geen wachtwoord reset heeft aangevraagd, kunt u deze e-mail negeren.
+
+Met vriendelijke groet,
+Kayak Job Alerts Team
+"""
+    
+    msg.attach(MIMEText(body, 'plain'))
+    
+    try:
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(sender_email, password)
+        server.send_message(msg)
+        server.quit()
+        print(f"Reset e-mail succesvol verzonden naar {email}")
+    except Exception as e:
+        print(f"Fout bij het verzenden van de reset e-mail: {str(e)}")
+
+@app.route('/test/email')
+@login_required
+@admin_required
+def test_email():
+    try:
+        # Test e-mail versturen
+        test_jobs = [{
+            'title': 'Test Vacature',
+            'company': 'Test Bedrijf',
+            'location': 'Test Locatie'
+        }]
+        
+        send_job_alert(current_user.email, 'TEST ALERT', test_jobs)
+        flash('Test e-mail succesvol verzonden!')
+    except Exception as e:
+        flash(f'Fout bij versturen test e-mail: {str(e)}')
+    
+    return redirect(url_for('dashboard'))
 
 if __name__ == '__main__':
     with app.app_context():

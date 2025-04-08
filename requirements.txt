@@ -1,9 +1,10 @@
-requests==2.31.0
+Flask==3.0.2
+Flask-SQLAlchemy==3.1.1
+Flask-Login==0.6.3
+Flask-WTF==1.2.1
 python-dotenv==1.0.0
-schedule==1.2.1
+requests==2.31.0
 beautifulsoup4==4.12.2
-flask==3.0.2
-flask-sqlalchemy==3.1.1
-flask-login==0.6.3
-flask-wtf==1.2.1
-email-validator==2.1.0.post1 
+schedule==1.2.1
+email-validator==2.1.0.post1
+gunicorn==21.2.0 
