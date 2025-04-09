@@ -1,3 +1,4 @@
+import json
 import os
 import time
 import requests
@@ -11,6 +12,25 @@ from app import app, db, JobAlert
 # Laad environment variabelen
 load_dotenv()
 
+# Configuratie voor mock data
+USE_MOCK_DATA = True  # Zet dit op False om SerpApi te gebruiken
+MOCK_DATA_FILE = 'mock_jobs.json'
+
+def generate_job_id(job):
+    """Genereer een unieke ID voor een vacature"""
+    return f"{job.get('title', '')}_{job.get('company_name', '')}_{job.get('location', '')}"
+
+def get_jobs_from_mock():
+    """Haal vacatures op uit mock_jobs.json"""
+    try:
+        with open(MOCK_DATA_FILE, 'r', encoding='utf-8') as f:
+            mock_data = json.load(f)
+            print("Mock data succesvol geladen")
+            return mock_data  # Direct de lijst met vacatures teruggeven
+    except Exception as e:
+        print(f"Fout bij het laden van mock data: {str(e)}")
+        return []
+
 def send_job_alert_email(user_email, search_query, location, jobs):
     try:
         # E-mail configuratie
@@ -23,7 +43,7 @@ def send_job_alert_email(user_email, search_query, location, jobs):
         msg = MIMEMultipart('alternative')
         msg['From'] = sender_email
         msg['To'] = user_email
-        msg['Subject'] = f"Nieuwe vacatures gevonden voor: {search_query} in {location}"
+        msg['Subject'] = "Uw vacature leads van Kayak.jobs"
         
         # HTML inhoud voor de e-mail
         html_content = f"""
@@ -54,7 +74,7 @@ def send_job_alert_email(user_email, search_query, location, jobs):
         <body>
             <div class="container">
                 <div class="header">
-                    <h2>Nieuwe vacatures gevonden voor: {search_query} in {location}</h2>
+                    <h2>Uw vacature leads van Kayak.jobs</h2>
                     <p>Er zijn {len(jobs)} nieuwe vacatures gevonden die voldoen aan uw zoekcriteria.</p>
                 </div>
                 <div class="jobs">
@@ -83,7 +103,7 @@ def send_job_alert_email(user_email, search_query, location, jobs):
         html_content += """
                 </div>
                 <div class="footer">
-                    <p>Met vriendelijke groet,<br>Job Alert Team</p>
+                    <p>Met vriendelijke groeten,<br>team Kayak.jobs</p>
                 </div>
             </div>
         </body>
@@ -92,7 +112,7 @@ def send_job_alert_email(user_email, search_query, location, jobs):
         
         # Voeg zowel HTML als plain text toe
         text_content = f"""
-        Nieuwe vacatures gevonden voor: {search_query} in {location}
+        Uw vacature leads van Kayak.jobs
         
         Er zijn {len(jobs)} nieuwe vacatures gevonden die voldoen aan uw zoekcriteria.
         
@@ -108,8 +128,8 @@ def send_job_alert_email(user_email, search_query, location, jobs):
         """
         
         text_content += """
-        Met vriendelijke groet,
-        Job Alert Team
+        Met vriendelijke groeten,
+        team Kayak.jobs
         """
         
         msg.attach(MIMEText(text_content, 'plain'))
@@ -151,81 +171,109 @@ def check_jobs():
                     continue
                 
             try:
-                # SerpApi parameters
-                location = alert.location if alert.location else "Netherlands"
-                params = {
-                    "engine": "google_jobs",
-                    "q": f"{alert.search_query}",
-                    "location": location,
-                    "hl": "nl",
-                    "gl": "nl",
-                    "api_key": os.getenv("SERPAPI_KEY"),
-                    "num": "25",
-                    "lrad": "50",  # Zoekradius in kilometers
-                    "chips": "date_posted:today"  # Alleen vacatures van vandaag
-                }
-                
-                print(f"Zoeken naar: {params['q']} in {params['location']}")
-                print(f"API Key aanwezig: {'Ja' if os.getenv('SERPAPI_KEY') else 'Nee'}")
-                
-                # Verzamel resultaten van meerdere pagina's
-                all_jobs = []
-                next_page_token = None
-                max_pages = 3  # Maximum aantal pagina's om te controleren
-                max_jobs = 25  # Maximum aantal resultaten
-                
-                for page in range(max_pages):
-                    if next_page_token:
-                        params["next_page_token"] = next_page_token
+                if USE_MOCK_DATA:
+                    print("Gebruik mock data in plaats van SerpApi")
+                    all_jobs = get_jobs_from_mock()
+                else:
+                    # SerpApi parameters
+                    location = alert.location if alert.location else "Netherlands"
+                    params = {
+                        "engine": "google_jobs",
+                        "q": f"{alert.search_query}",
+                        "location": location,
+                        "hl": "nl",
+                        "gl": "nl",
+                        "api_key": os.getenv("SERPAPI_KEY"),
+                        "num": "25",
+                        "lrad": "50",  # Zoekradius in kilometers
+                        "chips": "date_posted:today"  # Alleen vacatures van vandaag
+                    }
                     
-                    print(f"Versturen request naar SerpApi...")
-                    response = requests.get("https://serpapi.com/search", params=params)
-                    print(f"Response status code: {response.status_code}")
+                    print(f"Zoeken naar: {params['q']} in {params['location']}")
+                    print(f"API Key aanwezig: {'Ja' if os.getenv('SERPAPI_KEY') else 'Nee'}")
                     
-                    if response.status_code != 200:
-                        print(f"Error response: {response.text}")
-                        break
+                    # Verzamel resultaten van meerdere pagina's
+                    all_jobs = []
+                    next_page_token = None
+                    max_pages = 3  # Maximum aantal pagina's om te controleren
+                    max_jobs = 25  # Maximum aantal resultaten
+                    
+                    for page in range(max_pages):
+                        if next_page_token:
+                            params["next_page_token"] = next_page_token
                         
-                    response.raise_for_status()
-                    data = response.json()
-                    
-                    # Debug informatie
-                    print(f"Response keys: {list(data.keys())}")
-                    
-                    if "jobs_results" in data:
-                        jobs = data["jobs_results"]
-                        print(f"Gevonden {len(jobs)} vacatures op pagina {page + 1}")
-                        all_jobs.extend(jobs)
+                        print(f"Versturen request naar SerpApi...")
+                        response = requests.get("https://serpapi.com/search", params=params)
+                        print(f"Response status code: {response.status_code}")
                         
-                        # Controleer of we genoeg resultaten hebben
-                        if len(all_jobs) >= max_jobs:
-                            all_jobs = all_jobs[:max_jobs]
-                            break
-                        
-                        # Controleer of er een volgende pagina is
-                        next_page_token = data.get("serpapi_pagination", {}).get("next_page_token")
-                        if not next_page_token:
-                            print("Geen volgende pagina beschikbaar")
+                        if response.status_code != 200:
+                            print(f"Error response: {response.text}")
                             break
                             
-                        # Wacht even tussen requests
-                        time.sleep(2)
-                    else:
-                        print("Geen vacatures gevonden in response")
-                        print(f"Beschikbare data: {data}")
-                        break
+                        response.raise_for_status()
+                        data = response.json()
+                        
+                        # Debug informatie
+                        print(f"Response keys: {list(data.keys())}")
+                        
+                        if "jobs_results" in data:
+                            jobs = data["jobs_results"]
+                            print(f"Gevonden {len(jobs)} vacatures op pagina {page + 1}")
+                            all_jobs.extend(jobs)
+                            
+                            # Controleer of we genoeg resultaten hebben
+                            if len(all_jobs) >= max_jobs:
+                                all_jobs = all_jobs[:max_jobs]
+                                break
+                            
+                            # Controleer of er een volgende pagina is
+                            next_page_token = data.get("serpapi_pagination", {}).get("next_page_token")
+                            if not next_page_token:
+                                print("Geen volgende pagina beschikbaar")
+                                break
+                                
+                            # Wacht even tussen requests
+                            time.sleep(2)
+                        else:
+                            print("Geen vacatures gevonden in response")
+                            print(f"Beschikbare data: {data}")
+                            break
                 
                 print(f"Totaal aantal gevonden vacatures: {len(all_jobs)}")
                 
                 if all_jobs:
-                    # Haal de gebruiker op via de relatie
-                    user = alert.user
-                    if user and user.email:
-                        # Stuur email met de gevonden vacatures
-                        send_job_alert_email(user.email, alert.search_query, alert.location, all_jobs)
-                        print(f"Email verzonden naar {user.email}")
-                    else:
-                        print(f"Geen geldig email adres gevonden voor alert {alert.id}")
+                    # Haal de verzonden job IDs op
+                    sent_job_ids = json.loads(alert.sent_job_ids)
+                    
+                    # Filter nieuwe vacatures
+                    new_jobs = []
+                    for job in all_jobs:
+                        job_id = generate_job_id(job)
+                        if job_id not in sent_job_ids:
+                            new_jobs.append(job)
+                    
+                    print(f"Aantal nieuwe vacatures: {len(new_jobs)}")
+                    
+                    if new_jobs:
+                        # Haal de gebruiker op via de relatie
+                        user = alert.user
+                        if user and user.email:
+                            # Stuur email met de nieuwe vacatures
+                            send_job_alert_email(user.email, alert.search_query, alert.location, new_jobs)
+                            print(f"Email verzonden naar {user.email}")
+                            
+                            # Update sent_job_ids
+                            new_job_ids = [generate_job_id(job) for job in new_jobs]
+                            sent_job_ids.extend(new_job_ids)
+                            
+                            # Beperk de lijst tot 10.000 tekens
+                            if len(json.dumps(sent_job_ids)) > 10000:
+                                sent_job_ids = sent_job_ids[-100:]  # Houd de laatste 100 IDs
+                            
+                            alert.sent_job_ids = json.dumps(sent_job_ids)
+                            db.session.commit()
+                        else:
+                            print(f"Geen geldig email adres gevonden voor alert {alert.id}")
                 
                 # Update last_check tijd
                 alert.last_check = datetime.now(UTC)
