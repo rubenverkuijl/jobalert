@@ -146,7 +146,7 @@ def check_jobs():
                 else:
                     last_check_utc = alert.last_check
                 
-                if (datetime.now(UTC) - last_check_utc) < timedelta(hours=1):
+                if (datetime.now(UTC) - last_check_utc) < timedelta(hours=24):
                     print("Alert is te recent gecontroleerd, overslaan...")
                     continue
                 
